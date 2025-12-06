@@ -38,7 +38,7 @@ def load_qa_data() -> list:
         return []
 
 
-def find_answer(message_text: str, qa_data: list) -> str | None:
+def find_answer(message_text: str, qa_data: list) -> dict | None:
     """
     Ищет ответ на основе ключевых слов в сообщении.
     
@@ -47,7 +47,7 @@ def find_answer(message_text: str, qa_data: list) -> str | None:
         qa_data: Список вопросов и ответов
         
     Returns:
-        Ответ, если найдено совпадение, иначе None
+        Словарь с ответом, если найдено совпадение, иначе None
     """
     message_lower = message_text.lower()
     
@@ -55,7 +55,11 @@ def find_answer(message_text: str, qa_data: list) -> str | None:
         keywords = qa.get('keywords', [])
         for keyword in keywords:
             if keyword.lower() in message_lower:
-                return qa.get('answer')
+                return {
+                    'type': qa.get('type', 'text'),
+                    'answer': qa.get('answer'),
+                    'caption': qa.get('caption', '')
+                }
     
     return None
 
@@ -74,15 +78,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     logger.info(f"Получено сообщение в чате {chat_id} ({chat_type}): {message_text[:50]}...")
     
-    # Загружаем данные Q&A (можно кэшировать для производительности)
+    # Загружаем данные Q&A
     qa_data = load_qa_data()
     
     # Ищем ответ
-    answer = find_answer(message_text, qa_data)
+    result = find_answer(message_text, qa_data)
     
-    if answer:
-        logger.info(f"Найден ответ для сообщения: {answer[:50]}...")
-        await update.message.reply_text(answer)
+    if result:
+        answer_type = result['type']
+        answer = result['answer']
+        caption = result['caption']
+        
+        if answer_type == 'photo':
+            # Отправляем фото
+            logger.info(f"Отправляем фото: {answer}")
+            try:
+                with open(answer, 'rb') as photo:
+                    await update.message.reply_photo(photo=photo, caption=caption if caption else None)
+            except FileNotFoundError:
+                logger.error(f"Файл не найден: {answer}")
+                await update.message.reply_text("Извините, файл не найден.")
+        else:
+            # Отправляем текст
+            logger.info(f"Найден ответ для сообщения: {answer[:50]}...")
+            await update.message.reply_text(answer)
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
